@@ -28,7 +28,8 @@ def read_syncdatalist_float(*args, **kwargs):
 def tags_at(run: int, *other_runs: int, beamline: int = None) -> Tuple[int, Sequence[int]]:
     """
     Example:
-        high, tags = tags_at(509700, beamline=3)
+        hightag, tags = tags_at(509700, beamline=3)  # from single run
+        hightag, tags = tags_at(509700, 509701, 509702, beamline=3)  # from multiple runs
     """
     if beamline is None:
         raise ValueError("Keyword argument 'beamline' must be given!")
@@ -37,12 +38,12 @@ def tags_at(run: int, *other_runs: int, beamline: int = None) -> Tuple[int, Sequ
     taglist_at_the_beamline = partial(taglist, beamline)
     hightags: ndarray = pipe(runs, partial(map, hightag_at_the_beamline), partial(fromiter, dtype='int'))
     if not (hightags == hightags[0]).all():
-        raise ValueError('Not all the runs have a single high tag!')
+        raise ValueError('Not all the runs have a single hightag!')
     tags = pipe(runs, partial(map, taglist_at_the_beamline), concat, sorted, tuple)
     return hightags[0], tags
 
 
-def scalars_at(run: int, *other_runs: int, beamline: int = None,
+def scalars_at(run_or_tag: int, *other_runs_or_tags: int, beamline: int = None, hightag: int = None,
                equips: Mapping[str, Tuple[str, Callable]]) -> DataFrame:
     """
     Example:
@@ -50,13 +51,20 @@ def scalars_at(run: int, *other_runs: int, beamline: int = None,
             'fel_status': ('xfel_mon_bpm_bl3_0_3_beamstatus/summary', bool),
             'fel_shutter': ('xfel_bl_3_shutter_1_open_valid/status', bool)
         }
-        df = scalars_at(602345, beamline=3, equips=equips)
+        df = scalars_at(602345, beamline=3, equips=equips)  # from single run
+        df = scalars_at(602345, 602346, 602347, beamline=3, equips=equips)  # from multiple runs
+        df = scalars_at(121379273, 121379275, 121379277, hightag=201701, equips=equips)  # from tags
     """
-    if beamline is None:
-        raise ValueError("Keyword argument 'beamline' must be given!")
-    runs = run, *other_runs
-    high, tags = tags_at(*runs, beamline=beamline)
-    scalars = {k: tp(read_syncdatalist_float(equip, high, tags)) for k, (equip, tp) in equips.items()}
+    if beamline is None and hightag is None:
+        raise ValueError("Keyword argument 'beamline' or 'hightag' must be given!")
+    if hightag is not None:
+        if beamline is not None:
+            print("Keyword argument 'beamline' will be ignored!")
+        tags = run_or_tag, *other_runs_or_tags
+    else:
+        runs = run_or_tag, *other_runs_or_tags
+        hightag, tags = tags_at(*runs, beamline=beamline)
+    scalars = {k: tp(read_syncdatalist_float(equip, hightag, tags)) for k, (equip, tp) in equips.items()}
     return DataFrame(scalars, index=tags)
 
 
@@ -68,7 +76,7 @@ APIError: Optional[Callable] = None
 class __ArrReader:
     """
     Example:
-        with ArrReader(509700, beamline=3, equip='MPCCD-8-2-002-1') as r:
+        with ArrReader(509700, 509701, 509702, beamline=3, equip='MPCCD-8-2-002-1') as r:
             for d in r:
                 print(d['ch0_data'])
                 break
@@ -80,7 +88,7 @@ class __ArrReader:
         self.__equip = equip
         self.__beamline = beamline
         self.__runs = run, *other_runs
-        self.__high, self.__tags = tags_at(*self.__runs, beamline=self.__beamline)
+        self.__hightag, self.__tags = tags_at(*self.__runs, beamline=self.__beamline)
         self.__reader: Optional[StorageReader] = None
 
     def __enter__(self):
@@ -109,8 +117,8 @@ class __ArrReader:
         self.__reader: Optional[StorageReader] = None
 
     @property
-    def high(self):
-        return self.__high
+    def hightag(self):
+        return self.__hightag
 
     @property
     def tags(self):
@@ -119,5 +127,6 @@ class __ArrReader:
 
 def ArrReader(*args, **kwargs):
     global ArrReader, StorageReader, StorageBuffer, APIError
+    from stpy import StorageReader, StorageBuffer, APIError
     ArrReader = __ArrReader
     return ArrReader(*args, **kwargs)
