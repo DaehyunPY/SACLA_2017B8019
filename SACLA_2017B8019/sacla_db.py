@@ -64,7 +64,7 @@ def scalars_at(run_or_tag: int, *other_runs_or_tags: int, beamline: int = None, 
     else:
         runs = run_or_tag, *other_runs_or_tags
         hightag, tags = tags_at(*runs, beamline=beamline)
-    scalars = {k: tp(read_syncdatalist_float(equip, hightag, tags)) for k, (equip, tp) in equips.items()}
+    scalars = {k: [tp(v) for v in read_syncdatalist_float(equip, hightag, tags)] for k, (equip, tp) in equips.items()}
     return DataFrame(scalars, index=tags)
 
 
